@@ -1,5 +1,9 @@
 from typing import cast
 
+from django.db import models
+from django.template.defaultfilters import linebreaks_filter
+
+from core.html import strip_html
 from users.models import Follow, FollowStates, Identity
 
 
@@ -11,6 +15,22 @@ class IdentityService:
     def __init__(self, identity: Identity):
         self.identity = identity
 
+    def following(self) -> models.QuerySet[Identity]:
+        return (
+            Identity.objects.filter(inbound_follows__source=self.identity)
+            .not_deleted()
+            .order_by("username")
+            .select_related("domain")
+        )
+
+    def followers(self) -> models.QuerySet[Identity]:
+        return (
+            Identity.objects.filter(outbound_follows__target=self.identity)
+            .not_deleted()
+            .order_by("username")
+            .select_related("domain")
+        )
+
     def follow_from(self, from_identity: Identity) -> Follow:
         """
         Follows a user (or does nothing if already followed).
@@ -19,11 +39,7 @@ class IdentityService:
         existing_follow = Follow.maybe_get(from_identity, self.identity)
         if not existing_follow:
             Follow.create_local(from_identity, self.identity)
-        elif existing_follow.state in [
-            FollowStates.undone,
-            FollowStates.undone_remotely,
-            FollowStates.failed,
-        ]:
+        elif existing_follow.state not in FollowStates.group_active():
             existing_follow.transition_perform(FollowStates.unrequested)
         return cast(Follow, existing_follow)
 
@@ -61,3 +77,13 @@ class IdentityService:
             "endorsed": False,
             "note": "",
         }
+
+    def set_summary(self, summary: str):
+        """
+        Safely sets a summary and turns linebreaks into HTML
+        """
+        if summary:
+            self.identity.summary = linebreaks_filter(strip_html(summary))
+        else:
+            self.identity.summary = None
+        self.identity.save()

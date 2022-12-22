@@ -1,6 +1,8 @@
 from django.shortcuts import get_object_or_404
+from ninja import Field
 
 from activities.models import Post, PostInteraction
+from activities.services import SearchService
 from api import schemas
 from api.decorators import identity_required
 from api.pagination import MastodonPaginator
@@ -26,6 +28,55 @@ def account_relationships(request):
             IdentityService(identity).mastodon_json_relationship(request.identity)
         )
     return result
+
+
+@api_router.get(
+    "/v1/accounts/familiar_followers", response=list[schemas.FamiliarFollowers]
+)
+@identity_required
+def familiar_followers(request):
+    """
+    Returns people you follow that also follow given account IDs
+    """
+    ids = request.GET.getlist("id[]")
+    result = []
+    for id in ids:
+        target_identity = get_object_or_404(Identity, pk=id)
+        result.append(
+            {
+                "id": id,
+                "accounts": [
+                    identity.to_mastodon_json()
+                    for identity in Identity.objects.filter(
+                        inbound_follows__source=request.identity,
+                        outbound_follows__target=target_identity,
+                    )[:20]
+                ],
+            }
+        )
+    return result
+
+
+@api_router.get("/v1/accounts/search", response=list[schemas.Account])
+@identity_required
+def search(
+    request,
+    q: str,
+    fetch_identities: bool = Field(False, alias="resolve"),
+    following: bool = False,
+    limit: int = 20,
+    offset: int = 0,
+):
+    """
+    Handles searching for accounts by username or handle
+    """
+    if limit > 40:
+        limit = 40
+    if offset:
+        return []
+    searcher = SearchService(q, request.identity)
+    search_result = searcher.search_identities_handle()
+    return [i.to_mastodon_json() for i in search_result]
 
 
 @api_router.get("/v1/accounts/{id}", response=schemas.Account)

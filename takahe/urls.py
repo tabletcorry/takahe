@@ -161,6 +161,8 @@ urlpatterns = [
     path("@<handle>/action/", identity.ActionIdentity.as_view()),
     path("@<handle>/rss/", identity.IdentityFeed()),
     path("@<handle>/report/", report.SubmitReport.as_view()),
+    path("@<handle>/following/", identity.IdentityFollows.as_view(inbound=False)),
+    path("@<handle>/followers/", identity.IdentityFollows.as_view(inbound=True)),
     # Posts
     path("compose/", compose.Compose.as_view(), name="compose"),
     path(
@@ -246,8 +248,6 @@ urlpatterns = [
     path(".stator/", stator.RequestRunner.as_view()),
     # Django admin
     path("djadmin/", djadmin.site.urls),
-    # Debug toolbar
-    path("__debug__/", include("debug_toolbar.urls")),
     # Media files
     re_path(
         r"^media/(?P<path>.*)$",
@@ -255,3 +255,7 @@ urlpatterns = [
         kwargs={"document_root": djsettings.MEDIA_ROOT},
     ),
 ]
+
+# Debug toolbar
+if djsettings.DEBUG:
+    urlpatterns.append(path("__debug__/", include("debug_toolbar.urls")))

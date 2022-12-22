@@ -29,7 +29,7 @@ class ViewIdentity(ListView):
     """
 
     template_name = "identity/view.html"
-    paginate_by = 5
+    paginate_by = 25
 
     def get(self, request, handle):
         # Make sure we understand this handle
@@ -140,6 +140,45 @@ class IdentityFeed(Feed):
         return item.published
 
 
+class IdentityFollows(ListView):
+    """
+    Shows following/followers for an identity.
+    """
+
+    template_name = "identity/follows.html"
+    paginate_by = 25
+    inbound = False
+
+    def get(self, request, handle):
+        self.identity = by_handle_or_404(
+            self.request,
+            handle,
+            local=False,
+        )
+        if not Config.load_identity(self.identity).visible_follows:
+            raise Http404("Hidden follows")
+        return super().get(request, identity=self.identity)
+
+    def get_queryset(self):
+        if self.inbound:
+            return IdentityService(self.identity).followers()
+        else:
+            return IdentityService(self.identity).following()
+
+    def get_context_data(self):
+        context = super().get_context_data()
+        context["identity"] = self.identity
+        context["inbound"] = self.inbound
+        context["follows_page"] = True
+        context["followers_count"] = self.identity.inbound_follows.filter(
+            state__in=FollowStates.group_active()
+        ).count()
+        context["following_count"] = self.identity.outbound_follows.filter(
+            state__in=FollowStates.group_active()
+        ).count()
+        return context
+
+
 @method_decorator(identity_required, name="dispatch")
 class ActionIdentity(View):
     def post(self, request, handle):
@@ -246,7 +285,10 @@ class CreateIdentity(FormView):
             if (
                 username
                 and domain
-                and Identity.objects.filter(username=username, domain=domain).exists()
+                and Identity.objects.filter(
+                    username__iexact=username,
+                    domain=domain.lower(),
+                ).exists()
             ):
                 raise forms.ValidationError(f"{username}@{domain} is already taken")
 
@@ -268,7 +310,7 @@ class CreateIdentity(FormView):
         domain_instance = Domain.get_domain(domain)
         new_identity = Identity.objects.create(
             actor_uri=f"https://{domain_instance.uri_domain}/@{username}@{domain}/",
-            username=username.lower(),
+            username=username,
             domain_id=domain,
             name=form.cleaned_data["name"],
             local=True,
