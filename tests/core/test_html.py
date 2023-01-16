@@ -68,9 +68,7 @@ def test_link_preservation():
 def test_list_rendering():
     """
     We want to:
-     - Preserve incoming links from other servers
-     - Linkify mentions and hashtags
-     - Not have these all step on each other!
+     - Convert lists to breaks when they come from Glitch
     """
     renderer = ContentRenderer(local=True)
     fake_mention = Mock()
